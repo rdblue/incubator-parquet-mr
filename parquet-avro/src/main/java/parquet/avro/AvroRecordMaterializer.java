@@ -16,12 +16,11 @@
 package parquet.avro;
 
 import org.apache.avro.Schema;
-import org.apache.avro.generic.IndexedRecord;
 import parquet.io.api.GroupConverter;
 import parquet.io.api.RecordMaterializer;
 import parquet.schema.MessageType;
 
-class AvroRecordMaterializer<T extends IndexedRecord> extends RecordMaterializer<T> {
+class AvroRecordMaterializer<T> extends RecordMaterializer<T> {
 
   private AvroIndexedRecordConverter<T> root;
 

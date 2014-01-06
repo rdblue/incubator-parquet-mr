@@ -17,16 +17,14 @@ package parquet.avro;
 
 import java.io.IOException;
 import org.apache.avro.Schema;
-import org.apache.avro.generic.IndexedRecord;
 import org.apache.hadoop.fs.Path;
 import parquet.hadoop.ParquetWriter;
-import parquet.hadoop.api.WriteSupport;
 import parquet.hadoop.metadata.CompressionCodecName;
 
 /**
  * Write Avro records to a Parquet file.
  */
-public class AvroParquetWriter<T extends IndexedRecord> extends ParquetWriter<T> {
+public class AvroParquetWriter<T> extends ParquetWriter<T> {
 
   /** Create a new {@link AvroParquetWriter}.
    *
@@ -40,7 +38,7 @@ public class AvroParquetWriter<T extends IndexedRecord> extends ParquetWriter<T>
   public AvroParquetWriter(Path file, Schema avroSchema,
       CompressionCodecName compressionCodecName, int blockSize,
       int pageSize) throws IOException {
-    super(file, (WriteSupport<T>)new AvroWriteSupport(new AvroSchemaConverter().convert(avroSchema), avroSchema),
+    super(file, new AvroWriteSupport<T>(new AvroSchemaConverter().convert(avroSchema), avroSchema),
 	      compressionCodecName, blockSize, pageSize);
   }
 
@@ -57,8 +55,8 @@ public class AvroParquetWriter<T extends IndexedRecord> extends ParquetWriter<T>
   public AvroParquetWriter(Path file, Schema avroSchema,
                            CompressionCodecName compressionCodecName, int blockSize,
                            int pageSize, boolean enableDictionary) throws IOException {
-    super(file, (WriteSupport<T>)
-        new AvroWriteSupport(new AvroSchemaConverter().convert(avroSchema),avroSchema),
+    super(file,
+        new AvroWriteSupport<T>(new AvroSchemaConverter().convert(avroSchema),avroSchema),
         compressionCodecName, blockSize, pageSize, enableDictionary, false);
   }
 

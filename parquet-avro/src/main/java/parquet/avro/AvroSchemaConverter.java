@@ -124,7 +124,7 @@ public class AvroSchemaConverter {
   }
 
   private Type convertUnion(String fieldName, Schema schema, Type.Repetition repetition) {
-    List<Schema> nonNullSchemas = new ArrayList(schema.getTypes().size());
+    List<Schema> nonNullSchemas = new ArrayList<Schema>(schema.getTypes().size());
     for (Schema childSchema : schema.getTypes()) {
       if (childSchema.getType().equals(Schema.Type.NULL)) {
         repetition = Type.Repetition.OPTIONAL;
@@ -142,7 +142,7 @@ public class AvroSchemaConverter {
         return convertField(fieldName, nonNullSchemas.get(0), Type.Repetition.OPTIONAL); // Simple optional field
 
       default: // complex union type
-        List<Type> unionTypes = new ArrayList(nonNullSchemas.size());
+        List<Type> unionTypes = new ArrayList<Type>(nonNullSchemas.size());
         int index = 0;
         for (Schema childSchema : nonNullSchemas) {
           unionTypes.add( convertField("member" + index++, childSchema, Type.Repetition.OPTIONAL));

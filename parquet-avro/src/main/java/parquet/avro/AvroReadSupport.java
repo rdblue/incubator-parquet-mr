@@ -18,18 +18,18 @@ package parquet.avro;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.apache.avro.Schema;
-import org.apache.avro.generic.IndexedRecord;
 import org.apache.hadoop.conf.Configuration;
 import parquet.hadoop.api.ReadSupport;
 import parquet.io.api.RecordMaterializer;
 import parquet.schema.MessageType;
 
 /**
- * Avro implementation of {@link ReadSupport} for Avro {@link IndexedRecord}s which cover both Avro Specific and
- * Generic. Users should use {@link AvroParquetReader} or {@link AvroParquetInputFormat} rather than using
+ * Avro implementation of {@link ReadSupport} for Avro records,
+ * which covers Avro Generic, Specific, and Reflect models.
+ * Users should use {@link AvroParquetReader} or {@link AvroParquetInputFormat} rather than using
  * this class directly.
  */
-public class AvroReadSupport<T extends IndexedRecord> extends ReadSupport<T> {
+public class AvroReadSupport<T> extends ReadSupport<T> {
 
   public static String AVRO_REQUESTED_PROJECTION = "parquet.avro.projection";
   private static final String AVRO_READ_SCHEMA = "parquet.avro.read.schema";
@@ -51,6 +51,7 @@ public class AvroReadSupport<T extends IndexedRecord> extends ReadSupport<T> {
     configuration.set(AVRO_READ_SCHEMA, avroReadSchema.toString());
   }
 
+  @SuppressWarnings("deprecation")
   @Override
   public ReadContext init(Configuration configuration, Map<String, String> keyValueMetaData, MessageType fileSchema) {
     MessageType schema = fileSchema;

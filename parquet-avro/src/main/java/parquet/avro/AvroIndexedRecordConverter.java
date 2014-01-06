@@ -15,14 +15,16 @@
  */
 package parquet.avro;
 
+import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import org.apache.avro.Schema;
-import org.apache.avro.generic.GenericArray;
 import org.apache.avro.generic.GenericData;
-import org.apache.avro.generic.IndexedRecord;
+import org.apache.avro.reflect.ReflectData;
 import org.apache.avro.specific.SpecificData;
 import parquet.Preconditions;
 import parquet.io.InvalidRecordException;
@@ -34,14 +36,16 @@ import parquet.schema.GroupType;
 import parquet.schema.MessageType;
 import parquet.schema.Type;
 
-class AvroIndexedRecordConverter<T extends IndexedRecord> extends GroupConverter {
+class AvroIndexedRecordConverter<T> extends GroupConverter {
+
+  private static final String CLASS_PROP = "java-class"; // SpecificData.CLASS_PROP from Avro 1.7.5
+  private static final String ELEMENT_PROP = "java-element-class"; // SpecificData.ELEMENT_PROP from Avro 1.7.5
 
   private final ParentValueContainer parent;
   protected T currentRecord;
   private final Converter[] converters;
 
   private final Schema avroSchema;
-  private final Class<? extends IndexedRecord> specificClass;
 
   private final GenericData model;
   private final Map<Schema.Field, Object> recordDefaults = new HashMap<Schema.Field, Object>();
@@ -56,9 +60,7 @@ class AvroIndexedRecordConverter<T extends IndexedRecord> extends GroupConverter
     this.avroSchema = avroSchema;
     int schemaSize = parquetSchema.getFieldCount();
     this.converters = new Converter[schemaSize];
-    this.specificClass = SpecificData.get().getClass(avroSchema);
-
-    model = this.specificClass == null ? GenericData.get() : SpecificData.get();
+    model = ReflectData.get();
 
     Map<String, Integer> avroFieldIndexes = new HashMap<String, Integer>();
     int avroFieldIndex = 0;
@@ -67,13 +69,13 @@ class AvroIndexedRecordConverter<T extends IndexedRecord> extends GroupConverter
     }
     int parquetFieldIndex = 0;
     for (Type parquetField: parquetSchema.getFields()) {
-      Schema.Field avroField = getAvroField(parquetField.getName());
+      final Schema.Field avroField = getAvroField(parquetField.getName());
       Schema nonNullSchema = AvroSchemaConverter.getNonNull(avroField.schema());
       final int finalAvroIndex = avroFieldIndexes.remove(avroField.name());
       converters[parquetFieldIndex++] = newConverter(nonNullSchema, parquetField, new ParentValueContainer() {
         @Override
         void add(Object value) {
-          AvroIndexedRecordConverter.this.set(finalAvroIndex, value);
+          AvroIndexedRecordConverter.this.set(avroField.name(), finalAvroIndex, value);
         }
       });
     }
@@ -106,6 +108,14 @@ class AvroIndexedRecordConverter<T extends IndexedRecord> extends GroupConverter
     if (schema.getType().equals(Schema.Type.BOOLEAN)) {
       return new FieldBooleanConverter(parent);
     } else if (schema.getType().equals(Schema.Type.INT)) {
+      String intClass = schema.getProp(CLASS_PROP);
+      if (Byte.class.getName().equals(intClass)) {
+        return new FieldByteConverter(parent);
+      } else if (Short.class.getName().equals(intClass)) {
+        return new FieldShortConverter(parent);
+      } else if (Character.class.getName().equals(intClass)) {
+        return new FieldCharConverter(parent);
+      }
       return new FieldIntegerConverter(parent);
     } else if (schema.getType().equals(Schema.Type.LONG)) {
       return new FieldLongConverter(parent);
@@ -114,7 +124,12 @@ class AvroIndexedRecordConverter<T extends IndexedRecord> extends GroupConverter
     } else if (schema.getType().equals(Schema.Type.DOUBLE)) {
       return new FieldDoubleConverter(parent);
     } else if (schema.getType().equals(Schema.Type.BYTES)) {
-      return new FieldBytesConverter(parent);
+      Class<?> c = getClassProp(schema, CLASS_PROP);
+      if (c != null && c.isArray()) {
+        return new FieldBytesConverter(parent);
+      } else {
+        return new FieldByteBufferConverter(parent);
+      }
     } else if (schema.getType().equals(Schema.Type.STRING)) {
       return new FieldStringConverter(parent);
     } else if (schema.getType().equals(Schema.Type.RECORD)) {
@@ -122,6 +137,10 @@ class AvroIndexedRecordConverter<T extends IndexedRecord> extends GroupConverter
     } else if (schema.getType().equals(Schema.Type.ENUM)) {
       return new FieldEnumConverter(parent,schema);
     } else if (schema.getType().equals(Schema.Type.ARRAY)) {
+      Class<?> collectionClass = getClassProp(schema, CLASS_PROP);
+      if (collectionClass == null || !collectionClass.isArray()) {
+        return new AvroCollectionConverter(parent, type, schema);
+      }
       return new AvroArrayConverter(parent, type, schema);
     } else if (schema.getType().equals(Schema.Type.MAP)) {
       return new MapConverter(parent, type, schema);
@@ -134,8 +153,20 @@ class AvroIndexedRecordConverter<T extends IndexedRecord> extends GroupConverter
         " (Parquet type: %s) ", schema, type));
   }
 
-  private void set(int index, Object value) {
-    this.currentRecord.put(index, value);
+  static Class getClassProp(Schema schema, String prop) {
+    String name = schema.getProp(prop);
+    if (name == null) {
+      return null;
+    }
+    try {
+      return Class.forName(name);
+    } catch (ClassNotFoundException e) {
+      throw new AvroTypeException(e);
+    }
+  }
+
+  private void set(String name, int index, Object value) {
+    this.model.setField(this.currentRecord, name, index, value);
   }
 
   @Override
@@ -145,10 +176,7 @@ class AvroIndexedRecordConverter<T extends IndexedRecord> extends GroupConverter
 
   @Override
   public void start() {
-    // Should do the right thing whether it is generic or specific
-    this.currentRecord = (T) ((this.specificClass == null) ?
-            new GenericData.Record(avroSchema) :
-            SpecificData.newInstance(specificClass, avroSchema));
+    this.currentRecord = (T) model.newRecord(null, avroSchema);
   }
 
   @Override
@@ -164,7 +192,7 @@ class AvroIndexedRecordConverter<T extends IndexedRecord> extends GroupConverter
       Schema.Field f = entry.getKey();
       // replace following with model.deepCopy once AVRO-1455 is being used
       Object defaultValue = deepCopy(f.schema(), entry.getValue());
-      this.currentRecord.put(f.pos(), defaultValue);
+      this.model.setField(this.currentRecord, f.name(), f.pos(), defaultValue);
     }
   }
 
@@ -205,6 +233,51 @@ class AvroIndexedRecordConverter<T extends IndexedRecord> extends GroupConverter
     @Override
     final public void addBoolean(boolean value) {
       parent.add(value);
+    }
+
+  }
+
+  static final class FieldByteConverter extends PrimitiveConverter {
+
+    private final ParentValueContainer parent;
+
+    public FieldByteConverter(ParentValueContainer parent) {
+      this.parent = parent;
+    }
+
+    @Override
+    final public void addInt(int value) {
+      parent.add((byte) value);
+    }
+
+  }
+
+  static final class FieldShortConverter extends PrimitiveConverter {
+
+    private final ParentValueContainer parent;
+
+    public FieldShortConverter(ParentValueContainer parent) {
+      this.parent = parent;
+    }
+
+    @Override
+    final public void addInt(int value) {
+      parent.add((short) value);
+    }
+
+  }
+
+  static final class FieldCharConverter extends PrimitiveConverter {
+
+    private final ParentValueContainer parent;
+
+    public FieldCharConverter(ParentValueContainer parent) {
+      this.parent = parent;
+    }
+
+    @Override
+    final public void addInt(int value) {
+      parent.add((char) value);
     }
 
   }
@@ -309,6 +382,21 @@ class AvroIndexedRecordConverter<T extends IndexedRecord> extends GroupConverter
 
     @Override
     final public void addBinary(Binary value) {
+      parent.add(value.getBytes());
+    }
+
+  }
+
+  static final class FieldByteBufferConverter extends PrimitiveConverter {
+
+    private final ParentValueContainer parent;
+
+    public FieldByteBufferConverter(ParentValueContainer parent) {
+      this.parent = parent;
+    }
+
+    @Override
+    final public void addBinary(Binary value) {
       parent.add(ByteBuffer.wrap(value.getBytes()));
     }
 
@@ -359,10 +447,10 @@ class AvroIndexedRecordConverter<T extends IndexedRecord> extends GroupConverter
     public FieldFixedConverter(ParentValueContainer parent, Schema avroSchema) {
       this.parent = parent;
       this.avroSchema = avroSchema;
-      this.fixedClass = SpecificData.get().getClass(avroSchema);
+      this.fixedClass = ReflectData.get().getClass(avroSchema);
       if (fixedClass != null) {
         try {
-          this.fixedClassCtor = 
+          this.fixedClassCtor =
               fixedClass.getConstructor(new Class[] { byte[].class });
         } catch (Exception e) {
           throw new RuntimeException(e);
@@ -391,14 +479,14 @@ class AvroIndexedRecordConverter<T extends IndexedRecord> extends GroupConverter
     }
   }
 
-  static final class AvroArrayConverter<T> extends GroupConverter {
+  static class AvroCollectionConverter<T> extends GroupConverter {
 
-    private final ParentValueContainer parent;
-    private final Schema avroSchema;
+    protected final ParentValueContainer parent;
+    protected final Schema avroSchema;
     private final Converter converter;
-    private GenericArray<T> array;
+    protected Collection<T> collection;
 
-    public AvroArrayConverter(ParentValueContainer parent, Type parquetSchema,
+    public AvroCollectionConverter(ParentValueContainer parent, Type parquetSchema,
         Schema avroSchema) {
       this.parent = parent;
       this.avroSchema = avroSchema;
@@ -408,7 +496,7 @@ class AvroIndexedRecordConverter<T extends IndexedRecord> extends GroupConverter
         @Override
         @SuppressWarnings("unchecked")
         void add(Object value) {
-          array.add((T) value);
+          collection.add((T) value);
         }
       });
     }
@@ -420,12 +508,105 @@ class AvroIndexedRecordConverter<T extends IndexedRecord> extends GroupConverter
 
     @Override
     public void start() {
-      array = new GenericData.Array<T>(0, avroSchema);
+      collection = (Collection<T>) newCollection(0, avroSchema);
     }
 
     @Override
     public void end() {
+      parent.add(collection);
+    }
+
+    private static Object newCollection(int size, Schema schema) {
+      Class<?> collectionClass = getClassProp(schema, CLASS_PROP);
+      if (collectionClass != null && !collectionClass.isArray()) {
+        if (collectionClass.isAssignableFrom(ArrayList.class))
+          return new ArrayList<Object>();
+        return SpecificData.newInstance(collectionClass, schema);
+      }
+      return new GenericData.Array(size, schema);
+    }
+  }
+
+  static final class AvroArrayConverter<T> extends AvroCollectionConverter<T> {
+    public AvroArrayConverter(ParentValueContainer parent, Type parquetSchema,
+        Schema avroSchema) {
+      super(parent, parquetSchema, avroSchema);
+    }
+
+    @Override
+    public void end() {
+      Object array = newArray(collection.size(), avroSchema);
+      Class<?> elementType = array.getClass().getComponentType();
+      int i = 0;
+      if (elementType.isPrimitive()) {
+        if (elementType.equals(boolean.class)) {
+          boolean[] ar = (boolean[]) array;
+          for (T elt : collection) {
+            ar[i++] = (Boolean) elt;
+          }
+        } else if (elementType.equals(char.class)) {
+          char[] ar = (char[]) array;
+          for (T elt : collection) {
+            ar[i++] = (Character) elt;
+          }
+        } else if (elementType.equals(byte.class)) {
+          byte[] ar = (byte[]) array;
+          for (T elt : collection) {
+            ar[i++] = (Byte) elt;
+          }
+        } else if (elementType.equals(short.class)) {
+          short[] ar = (short[]) array;
+          for (T elt : collection) {
+            ar[i++] = (Short) elt;
+          }
+        } else if (elementType.equals(int.class)) {
+          int[] ar = (int[]) array;
+          for (T elt : collection) {
+            ar[i++] = (Integer) elt;
+          }
+        } else if (elementType.equals(long.class)) {
+          long[] ar = (long[]) array;
+          for (T elt : collection) {
+            ar[i++] = (Long) elt;
+          }
+        } else if (elementType.equals(float.class)) {
+          float[] ar = (float[]) array;
+          for (T elt : collection) {
+            ar[i++] = (Float) elt;
+          }
+        } else if (elementType.equals(double.class)) {
+          double[] ar = (double[]) array;
+          for (T elt : collection) {
+            ar[i++] = (Double) elt;
+          }
+        } else {
+          arrayError(elementType, avroSchema.getElementType().getType());
+        }
+      } else {
+        Object[] objectArray = (Object[]) array;
+        for (T elt : collection) {
+          objectArray[i++] = elt;
+        }
+      }
       parent.add(array);
+    }
+
+    private void arrayError(Class<?> cl, Schema.Type type) {
+      throw new AvroTypeException("Error reading array with inner type " +
+          cl + " and avro type: " + type);
+    }
+
+    private Object newArray(int size, Schema schema) {
+      Class<?> collectionClass = getClassProp(schema, CLASS_PROP);
+      Class<?> elementClass = getClassProp(schema, ELEMENT_PROP);
+
+      if (elementClass == null) {
+        elementClass = collectionClass.getComponentType();
+      }
+      if (elementClass == null) {
+        elementClass = ReflectData.get().getClass(schema.getElementType());
+      }
+      return Array.newInstance(elementClass, size);
     }
   }
 

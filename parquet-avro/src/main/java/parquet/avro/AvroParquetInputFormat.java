@@ -16,7 +16,6 @@
 package parquet.avro;
 
 import org.apache.avro.Schema;
-import org.apache.avro.generic.IndexedRecord;
 import org.apache.hadoop.mapreduce.Job;
 import parquet.hadoop.ParquetInputFormat;
 import parquet.hadoop.util.ContextUtil;
@@ -24,7 +23,7 @@ import parquet.hadoop.util.ContextUtil;
 /**
  * A Hadoop {@link org.apache.hadoop.mapreduce.InputFormat} for Parquet files.
  */
-public class AvroParquetInputFormat extends ParquetInputFormat<IndexedRecord> {
+public class AvroParquetInputFormat<T> extends ParquetInputFormat<T> {
   public AvroParquetInputFormat() {
     super(AvroReadSupport.class);
   }

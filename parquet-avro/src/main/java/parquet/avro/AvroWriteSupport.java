@@ -16,16 +16,15 @@
 package parquet.avro;
 
 import java.nio.ByteBuffer;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.apache.avro.Schema;
-import org.apache.avro.generic.GenericArray;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericFixed;
 import org.apache.avro.generic.IndexedRecord;
-import org.apache.avro.specific.SpecificData;
-import org.apache.avro.specific.SpecificRecord;
+import org.apache.avro.reflect.ReflectData;
 import org.apache.avro.util.Utf8;
 import org.apache.hadoop.conf.Configuration;
 import parquet.hadoop.api.WriteSupport;
@@ -36,17 +35,19 @@ import parquet.schema.MessageType;
 import parquet.schema.Type;
 
 /**
- * Avro implementation of {@link WriteSupport} for {@link IndexedRecord}s - both Avro Generic and Specific.
+ * Avro implementation of {@link WriteSupport} for Avro records,
+ * which covers Avro Generic, Specific, and Reflect models.
  * Users should use {@link AvroParquetWriter} or {@link AvroParquetOutputFormat} rather than using
  * this class directly.
  */
-public class AvroWriteSupport extends WriteSupport<IndexedRecord> {
+public class AvroWriteSupport<T> extends WriteSupport<T> {
 
   private static final String AVRO_SCHEMA = "parquet.avro.schema";
 
   private RecordConsumer recordConsumer;
   private MessageType rootSchema;
   private Schema rootAvroSchema;
+  private ReflectData data = ReflectData.get();
 
   public AvroWriteSupport() {
   }
@@ -79,22 +80,30 @@ public class AvroWriteSupport extends WriteSupport<IndexedRecord> {
     this.recordConsumer = recordConsumer;
   }
 
-  @Override
+  @SuppressWarnings("unchecked")
+  // overloaded version for backward compatibility
   public void write(IndexedRecord record) {
+    recordConsumer.startMessage();
+    writeRecordFields(rootSchema, rootAvroSchema, (T) record);
+    recordConsumer.endMessage();
+  }
+
+  @Override
+  public void write(T record) {
     recordConsumer.startMessage();
     writeRecordFields(rootSchema, rootAvroSchema, record);
     recordConsumer.endMessage();
   }
 
   private void writeRecord(GroupType schema, Schema avroSchema,
-                           IndexedRecord record) {
+                           T record) {
     recordConsumer.startGroup();
     writeRecordFields(schema, avroSchema, record);
     recordConsumer.endGroup();
   }
 
   private void writeRecordFields(GroupType schema, Schema avroSchema,
-                                 IndexedRecord record) {
+                                 T record) {
     List<Type> fields = schema.getFields();
     List<Schema.Field> avroFields = avroSchema.getFields();
     int index = 0; // parquet ignores Avro nulls, so index may differ
@@ -104,7 +113,7 @@ public class AvroWriteSupport extends WriteSupport<IndexedRecord> {
         continue;
       }
       Type fieldType = fields.get(index);
-      Object value = record.get(avroIndex);
+      Object value = data.getField(record, avroField.name(), avroIndex);
       if (value != null) {
         recordConsumer.startField(fieldType.getName(), index);
         writeValue(fieldType, avroField.schema(), value);
@@ -115,18 +124,126 @@ public class AvroWriteSupport extends WriteSupport<IndexedRecord> {
       index++;
     }
   }
-  
-  private <T> void writeArray(GroupType schema, Schema avroSchema,
-                              Iterable<T> array) {
-    recordConsumer.startGroup(); // group wrapper (original type LIST)
-    if (array.iterator().hasNext()) {
-      recordConsumer.startField("array", 0);
-      for (T elt : array) {
-        writeValue(schema.getType(0), avroSchema.getElementType(), elt);
+
+  private void writeArray(GroupType schema, Schema avroSchema, Object value) {
+    if (value instanceof Collection) {
+      Iterable<?> array = (Iterable<?>) value;
+      recordConsumer.startGroup(); // group wrapper (original type LIST)
+      if (array.iterator().hasNext()) {
+        recordConsumer.startField("array", 0);
+        for (Object elt : array) {
+          writeValue(schema.getType(0), avroSchema.getElementType(), elt);
+        }
+        recordConsumer.endField("array", 0);
       }
-      recordConsumer.endField("array", 0);
+      recordConsumer.endGroup();
+      return;
+    }
+    Class<?> elementClass = value.getClass().getComponentType();
+    if (elementClass == null) {
+      // not a Collection or an Array
+      throw new AvroTypeException("Array data must be a Collection or Array");
+    }
+    recordConsumer.startGroup(); // group wrapper (original type LIST)
+    if (elementClass.isPrimitive()) {
+      Schema.Type type = avroSchema.getElementType().getType();
+      switch(type) {
+        case BOOLEAN: {
+          boolean[] array = (boolean[]) value;
+          if (array.length > 0) {
+            recordConsumer.startField("array", 0);
+            for (boolean elt : array) {
+              recordConsumer.addBoolean(elt);
+            }
+            recordConsumer.endField("array", 0);
+          }
+          break;
+        }
+        case INT: {
+          if(elementClass.equals(int.class)) {
+            int[] array = (int[]) value;
+            if (array.length > 0) {
+              recordConsumer.startField("array", 0);
+              for (int elt : array) {
+                recordConsumer.addInteger(elt);
+              }
+              recordConsumer.endField("array", 0);
+            }
+          } else if(elementClass.equals(char.class)) {
+            char[] array = (char[]) value;
+            if (array.length > 0) {
+              recordConsumer.startField("array", 0);
+              for (char elt : array) {
+                recordConsumer.addInteger(elt);
+              }
+              recordConsumer.endField("array", 0);
+            }
+          } else if(elementClass.equals(short.class)) {
+            short[] array = (short[]) value;
+            if (array.length > 0) {
+              recordConsumer.startField("array", 0);
+              for (short elt : array) {
+                recordConsumer.addInteger(elt);
+              }
+              recordConsumer.endField("array", 0);
+            }
+          } else {
+            arrayError(elementClass, type);
+          }
+          break;
+        }
+        case LONG: {
+          long[] array = (long[]) value;
+          if (array.length > 0) {
+            recordConsumer.startField("array", 0);
+            for (long elt : array) {
+              recordConsumer.addLong(elt);
+            }
+            recordConsumer.endField("array", 0);
+          }
+          break;
+        }
+        case FLOAT: {
+          float[] array = (float[]) value;
+          if (array.length > 0) {
+            recordConsumer.startField("array", 0);
+            for (float elt : array) {
+              recordConsumer.addFloat(elt);
+            }
+            recordConsumer.endField("array", 0);
+          }
+          break;
+        }
+        case DOUBLE: {
+          double[] array = (double[]) value;
+          if (array.length > 0) {
+            recordConsumer.startField("array", 0);
+            for (double elt : array) {
+              recordConsumer.addDouble(elt);
+            }
+            recordConsumer.endField("array", 0);
+          }
+          break;
+        }
+        default:
+          arrayError(elementClass, type);
+      }
+    } else {
+      Object[] array = (Object[]) value;
+      if (array.length > 0) {
+        recordConsumer.startField("array", 0);
+        for (Object elt : array) {
+          writeValue(schema.getType(0), avroSchema.getElementType(), elt);
+        }
+        recordConsumer.endField("array", 0);
+      }
     }
     recordConsumer.endGroup();
+  }
+
+  private void arrayError(Class<?> cl, Schema.Type type) {
+    throw new AvroTypeException("Error writing array with inner type " +
+        cl + " and avro type: " + type);
   }
 
   private <V> void writeMap(GroupType schema, Schema avroSchema, 
@@ -191,7 +308,11 @@ public class AvroWriteSupport extends WriteSupport<IndexedRecord> {
     if (avroType.equals(Schema.Type.BOOLEAN)) {
       recordConsumer.addBoolean((Boolean) value);
     } else if (avroType.equals(Schema.Type.INT)) {
-      recordConsumer.addInteger(((Number) value).intValue());
+      if (value instanceof Character) {
+        recordConsumer.addInteger((int) ((Character) value).charValue());
+      } else {
+        recordConsumer.addInteger(((Number) value).intValue());
+      }
     } else if (avroType.equals(Schema.Type.LONG)) {
       recordConsumer.addLong(((Number) value).longValue());
     } else if (avroType.equals(Schema.Type.FLOAT)) {
@@ -199,15 +320,19 @@ public class AvroWriteSupport extends WriteSupport<IndexedRecord> {
     } else if (avroType.equals(Schema.Type.DOUBLE)) {
       recordConsumer.addDouble(((Number) value).doubleValue());
     } else if (avroType.equals(Schema.Type.BYTES)) {
-      recordConsumer.addBinary(Binary.fromByteBuffer((ByteBuffer) value));
+      if (value instanceof byte[]) {
+        recordConsumer.addBinary(Binary.fromByteArray((byte[]) value));
+      } else {
+        recordConsumer.addBinary(Binary.fromByteBuffer((ByteBuffer) value));
+      }
     } else if (avroType.equals(Schema.Type.STRING)) {
       recordConsumer.addBinary(fromAvroString(value));
     } else if (avroType.equals(Schema.Type.RECORD)) {
-      writeRecord((GroupType) type, nonNullAvroSchema, (IndexedRecord) value);
+      writeRecord((GroupType) type, nonNullAvroSchema, (T) value);
     } else if (avroType.equals(Schema.Type.ENUM)) {
       recordConsumer.addBinary(Binary.fromString(value.toString()));
     } else if (avroType.equals(Schema.Type.ARRAY)) {
-      writeArray((GroupType) type, nonNullAvroSchema, (Iterable<?>) value);
+      writeArray((GroupType) type, nonNullAvroSchema, value);
     } else if (avroType.equals(Schema.Type.MAP)) {
       writeMap((GroupType) type, nonNullAvroSchema, (Map<CharSequence, ?>) value);
     } else if (avroType.equals(Schema.Type.UNION)) {

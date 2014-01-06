@@ -17,34 +17,30 @@ package parquet.avro;
 
 import java.io.IOException;
 
-import org.apache.avro.Schema;
-import org.apache.avro.generic.IndexedRecord;
-
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 
 import parquet.filter.UnboundRecordFilter;
 import parquet.hadoop.ParquetReader;
-import parquet.hadoop.api.ReadSupport;
 
 /**
  * Read Avro records from a Parquet file.
  */
-public class AvroParquetReader<T extends IndexedRecord> extends ParquetReader<T> {
+public class AvroParquetReader<T> extends ParquetReader<T> {
 
   public AvroParquetReader(Path file) throws IOException {
-    super(file, (ReadSupport<T>) new AvroReadSupport());
+    super(file, new AvroReadSupport<T>());
   }
 
   public AvroParquetReader(Path file, UnboundRecordFilter recordFilter) throws IOException {
-    super(file, (ReadSupport<T>) new AvroReadSupport(), recordFilter);
+    super(file, new AvroReadSupport<T>(), recordFilter);
   }
 
   public AvroParquetReader(Configuration conf, Path file) throws IOException {
-    super(conf, file, (ReadSupport<T>) new AvroReadSupport());
+    super(conf, file, new AvroReadSupport<T>());
   }
 
   public AvroParquetReader(Configuration conf, Path file, UnboundRecordFilter recordFilter ) throws IOException {
-    super(conf, file, (ReadSupport<T>) new AvroReadSupport(), recordFilter);
+    super(conf, file, new AvroReadSupport<T>(), recordFilter);
   }
 }

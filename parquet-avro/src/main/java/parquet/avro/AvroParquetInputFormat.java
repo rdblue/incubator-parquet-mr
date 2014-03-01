@@ -66,4 +66,13 @@ public class AvroParquetInputFormat<T> extends ParquetInputFormat<T> {
     AvroReadSupport.setAvroReadSchema(ContextUtil.getConfiguration(job), avroReadSchema);
   }
 
+  /**
+   * Set the data model to use when creating records: GENERIC, SPECIFIC, or REFLECT.
+   *
+   * @param job
+   * @param avroReadModel a {@link parquet.avro.AvroReadSupport.Model}
+   */
+  public static void setAvroReadModel(Job job, AvroReadSupport.Model avroReadModel) {
+    AvroReadSupport.setAvroReadModel(ContextUtil.getConfiguration(job), avroReadModel);
+  }
 }

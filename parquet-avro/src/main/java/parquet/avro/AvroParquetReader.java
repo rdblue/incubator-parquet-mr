@@ -17,6 +17,7 @@ package parquet.avro;
 
 import java.io.IOException;
 
+import org.apache.avro.generic.GenericData;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 
@@ -32,12 +33,24 @@ public class AvroParquetReader<T> extends ParquetReader<T> {
     super(file, new AvroReadSupport<T>());
   }
 
+  public AvroParquetReader(Path file, GenericData dataModel) throws IOException {
+    super(file, new AvroReadSupport<T>(dataModel));
+  }
+
   public AvroParquetReader(Path file, UnboundRecordFilter recordFilter) throws IOException {
     super(file, new AvroReadSupport<T>(), recordFilter);
   }
 
+  public AvroParquetReader(Path file, UnboundRecordFilter recordFilter, GenericData dataModel) throws IOException {
+    super(file, new AvroReadSupport<T>(dataModel), recordFilter);
+  }
+
   public AvroParquetReader(Configuration conf, Path file) throws IOException {
     super(conf, file, new AvroReadSupport<T>());
+  }
+
+  public AvroParquetReader(Configuration conf, Path file, GenericData dataModel) throws IOException {
+    super(conf, file, new AvroReadSupport<T>(dataModel));
   }
 
   public AvroParquetReader(Configuration conf, Path file, UnboundRecordFilter recordFilter ) throws IOException {

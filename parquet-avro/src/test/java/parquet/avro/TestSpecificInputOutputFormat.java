@@ -21,9 +21,11 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.fail;
 
 import com.google.common.collect.Lists;
+import com.google.common.io.Resources;
 import java.io.IOException;
 import java.util.List;
 import org.apache.avro.Schema;
+import org.apache.avro.specific.SpecificData;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -172,6 +174,7 @@ public class TestSpecificInputOutputFormat {
     }
     projection.setFields(fields);
     AvroParquetInputFormat.setRequestedProjection(job, projection);
+    AvroParquetInputFormat.setAvroReadModel(job, AvroReadSupport.Model.SPECIFIC);
 
     job.setMapperClass(TestSpecificInputOutputFormat.MyMapper2.class);
     job.setNumReduceTasks(0);
@@ -184,7 +187,8 @@ public class TestSpecificInputOutputFormat {
 
     final Path mapperOutput = new Path(outputPath.toString(),
         "part-m-00000.parquet");
-    final AvroParquetReader<Car> out = new AvroParquetReader<Car>(mapperOutput);
+    final AvroParquetReader<Car> out = new AvroParquetReader<Car>(
+        mapperOutput, SpecificData.get());
     Car car;
     int lineNumber = 0;
     while ((car = out.read()) != null) {

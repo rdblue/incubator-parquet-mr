@@ -18,6 +18,9 @@ package parquet.avro;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.apache.avro.Schema;
+import org.apache.avro.generic.GenericData;
+import org.apache.avro.reflect.ReflectData;
+import org.apache.avro.specific.SpecificData;
 import org.apache.hadoop.conf.Configuration;
 import parquet.hadoop.api.ReadSupport;
 import parquet.io.api.RecordMaterializer;
@@ -30,6 +33,28 @@ import parquet.schema.MessageType;
  * this class directly.
  */
 public class AvroReadSupport<T> extends ReadSupport<T> {
+
+  public static enum Model {
+    GENERIC {
+      @Override
+      GenericData getData() {
+        return GenericData.get();
+      }
+    },
+    SPECIFIC {
+      @Override
+      GenericData getData() {
+        return SpecificData.get();
+      }
+    },
+    REFLECT;
+
+    GenericData getData() {
+      return ReflectData.get();
+    }
+  }
+
+  private static final String AVRO_READ_MODEL = "avro.read.model";
 
   public static String AVRO_REQUESTED_PROJECTION = "parquet.avro.projection";
   private static final String AVRO_READ_SCHEMA = "parquet.avro.read.schema";
@@ -49,6 +74,23 @@ public class AvroReadSupport<T> extends ReadSupport<T> {
    */
   public static void setAvroReadSchema(Configuration configuration, Schema avroReadSchema) {
     configuration.set(AVRO_READ_SCHEMA, avroReadSchema.toString());
+  }
+
+  /**
+   * @see parquet.avro.AvroParquetInputFormat#setAvroReadModel(org.apache.hadoop.mapreduce.Job, AvroReadSupport.Model)
+   */
+  public static void setAvroReadModel(Configuration configuration, Model avroReadModel) {
+    configuration.set(AVRO_READ_MODEL, avroReadModel.toString());
+  }
+
+  private final GenericData dataModel;
+
+  public AvroReadSupport() {
+    this.dataModel = null;
+  }
+
+  public AvroReadSupport(GenericData dataModel) {
+    this.dataModel = dataModel;
   }
 
   @SuppressWarnings("deprecation")
@@ -85,6 +127,11 @@ public class AvroReadSupport<T> extends ReadSupport<T> {
       // default to converting the Parquet schema into an Avro schema
       avroSchema = new AvroSchemaConverter().convert(parquetSchema);
     }
-    return new AvroRecordMaterializer<T>(parquetSchema, avroSchema);
+    if (dataModel == null) {
+      Model model = configuration.getEnum(AVRO_READ_MODEL, Model.REFLECT);
+      return new AvroRecordMaterializer<T>(parquetSchema, avroSchema, model.getData());
+    } else {
+      return new AvroRecordMaterializer<T>(parquetSchema, avroSchema, dataModel);
+    }
   }
 }

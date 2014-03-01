@@ -18,12 +18,18 @@ package parquet.avro;
 import com.google.common.collect.Lists;
 import java.io.File;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.apache.avro.Schema;
+import org.apache.avro.generic.GenericData;
+import org.apache.avro.generic.GenericEnumSymbol;
+import org.apache.avro.generic.GenericRecord;
+import org.apache.avro.reflect.AvroIgnore;
+import org.apache.avro.reflect.AvroName;
 import org.apache.avro.reflect.ReflectData;
 import org.apache.hadoop.fs.Path;
 import org.junit.Test;
@@ -47,6 +53,46 @@ public class TestReflectReadWrite {
       assertEquals(object, reader.read());
     }
     assertNull(reader.read());
+  }
+
+  @Test
+  public void testWriteReflectReadGeneric() throws IOException {
+    Path path = writePojosToParquetFile(2, CompressionCodecName.UNCOMPRESSED, false);
+    ParquetReader<GenericRecord> reader = new AvroParquetReader<GenericRecord>(path, GenericData.get());
+    GenericRecord object = getGenericPojo();
+    for (int i = 0; i < 2; i += 1) {
+      assertEquals(object, reader.read());
+    }
+    assertNull(reader.read());
+  }
+
+  private GenericRecord getGenericPojo() {
+    Schema schema = ReflectData.get().getSchema(Pojo.class);
+    GenericData.Record record = new GenericData.Record(schema);
+    record.put("myboolean", true);
+    record.put("mybyte", 1);
+    record.put("myshort", 1);
+    record.put("myint", 1);
+    record.put("mylong", 2L);
+    record.put("myfloat", 3.1f);
+    record.put("mydouble", 4.1);
+    record.put("mybytes", ByteBuffer.wrap(new byte[] { 1, 2, 3, 4 }));
+    record.put("mystring", "Hello");
+    record.put("myenum", new GenericData.EnumSymbol(
+        schema.getField("myenum").schema(), "A"));
+    Map<String, String> map = new HashMap<String, String>();
+    map.put("a", "1");
+    map.put("b", "2");
+    record.put("mymap", map);
+    record.put("myshortarray", new GenericData.Array<Integer>(
+        schema.getField("myshortarray").schema(), Lists.newArrayList(1, 2)));
+    record.put("myintarray", new GenericData.Array<Integer>(
+        schema.getField("myintarray").schema(), Lists.newArrayList(1, 2)));
+    record.put("mystringarray", new GenericData.Array<String>(
+        schema.getField("mystringarray").schema(), Lists.newArrayList("a", "b")));
+    record.put("mylist", new GenericData.Array<String>(
+        schema.getField("mylist").schema(), Lists.newArrayList("a", "b", "c")));
+    return record;
   }
 
   private Pojo getPojo() {

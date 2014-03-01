@@ -24,14 +24,13 @@ import java.util.*;
 
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
-import org.apache.avro.generic.GenericData.Fixed;
+import org.apache.avro.generic.GenericEnumSymbol;
 import org.apache.avro.generic.GenericFixed;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.generic.GenericRecordBuilder;
 import org.apache.avro.util.Utf8;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
-import org.codehaus.jackson.node.NullNode;
 import org.junit.Test;
 import parquet.hadoop.ParquetWriter;
 import parquet.hadoop.api.WriteSupport;
@@ -40,7 +39,6 @@ import parquet.io.api.RecordConsumer;
 import parquet.schema.MessageTypeParser;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertNotNull;
 
 public class TestReadWrite {
@@ -56,7 +54,7 @@ public class TestReadWrite {
     Path file = new Path(tmp.getPath());
 
     AvroParquetWriter<GenericRecord> writer = 
-        new AvroParquetWriter<GenericRecord>(file, schema);
+        new AvroParquetWriter<GenericRecord>(file, schema, GenericData.get());
 
     // Write a record with an empty array.
     List<Integer> emptyArray = new ArrayList<Integer>();
@@ -65,7 +63,7 @@ public class TestReadWrite {
     writer.write(record);
     writer.close();
 
-    AvroParquetReader<GenericRecord> reader = new AvroParquetReader<GenericRecord>(file);
+    AvroParquetReader<GenericRecord> reader = new AvroParquetReader<GenericRecord>(file, GenericData.get());
     GenericRecord nextRecord = reader.read();
 
     assertNotNull(nextRecord);
@@ -150,6 +148,9 @@ public class TestReadWrite {
     GenericFixed genericFixed = new GenericData.Fixed(
         Schema.createFixed("fixed", null, null, 1), new byte[] { (byte) 65 });
 
+    GenericEnumSymbol genericEnum = new GenericData.EnumSymbol(
+        schema.getField("myenum").schema(), "a");
+
     List<Integer> emptyArray = new ArrayList<Integer>();
     ImmutableMap emptyMap = new ImmutableMap.Builder<String, Integer>().build();
 
@@ -175,7 +176,7 @@ public class TestReadWrite {
     writer.write(record);
     writer.close();
 
-    AvroParquetReader<GenericRecord> reader = new AvroParquetReader<GenericRecord>(file);
+    AvroParquetReader<GenericRecord> reader = new AvroParquetReader<GenericRecord>(file, GenericData.get());
     GenericRecord nextRecord = reader.read();
 
     assertNotNull(nextRecord);
@@ -187,7 +188,7 @@ public class TestReadWrite {
     assertEquals(4.1, nextRecord.get("mydouble"));
     assertEquals(ByteBuffer.wrap("hello".getBytes(Charsets.UTF_8)), nextRecord.get("mybytes"));
     assertEquals("hello", nextRecord.get("mystring"));
-    assertEquals("a", nextRecord.get("myenum"));
+    assertEquals(genericEnum, nextRecord.get("myenum"));
     assertEquals(nestedRecord, nextRecord.get("mynestedrecord"));
     assertEquals(integerArray, nextRecord.get("myarray"));
     assertEquals(emptyArray, nextRecord.get("myemptyarray"));
@@ -377,7 +378,7 @@ public class TestReadWrite {
     GenericFixed genericFixed = new GenericData.Fixed(
         Schema.createFixed("fixed", null, null, 1), new byte[] { (byte) 65 });
 
-    AvroParquetReader<GenericRecord> reader = new AvroParquetReader<GenericRecord>(file);
+    AvroParquetReader<GenericRecord> reader = new AvroParquetReader<GenericRecord>(file, GenericData.get());
     GenericRecord nextRecord = reader.read();
     assertNotNull(nextRecord);
     assertEquals(true, nextRecord.get("myboolean"));

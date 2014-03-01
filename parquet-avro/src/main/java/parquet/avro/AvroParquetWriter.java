@@ -17,6 +17,7 @@ package parquet.avro;
 
 import java.io.IOException;
 import org.apache.avro.Schema;
+import org.apache.avro.generic.GenericData;
 import org.apache.hadoop.fs.Path;
 import parquet.hadoop.ParquetWriter;
 import parquet.hadoop.metadata.CompressionCodecName;
@@ -69,7 +70,19 @@ public class AvroParquetWriter<T> extends ParquetWriter<T> {
    */
   public AvroParquetWriter(Path file, Schema avroSchema) throws IOException {
     this(file, avroSchema, CompressionCodecName.UNCOMPRESSED,
-	  DEFAULT_BLOCK_SIZE, DEFAULT_PAGE_SIZE);
+        DEFAULT_BLOCK_SIZE, DEFAULT_PAGE_SIZE);
+  }
+
+  /** Create a new {@link AvroParquetWriter}. The default block size is 50 MB.The default
+   *  page size is 1 MB.  Default compression is no compression. (Inherited from {@link ParquetWriter})
+   *
+   * @param file The file name to write to.
+   * @param avroSchema The schema to write with.
+   * @throws IOException
+   */
+  public AvroParquetWriter(Path file, Schema avroSchema, GenericData dataModel) throws IOException {
+    super(file, new AvroWriteSupport<T>(new AvroSchemaConverter().convert(avroSchema), avroSchema, dataModel),
+        CompressionCodecName.UNCOMPRESSED, DEFAULT_BLOCK_SIZE, DEFAULT_PAGE_SIZE);
   }
 
 }

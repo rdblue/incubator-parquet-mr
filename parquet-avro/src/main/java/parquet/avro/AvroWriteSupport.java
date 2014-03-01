@@ -47,7 +47,7 @@ public class AvroWriteSupport<T> extends WriteSupport<T> {
   private RecordConsumer recordConsumer;
   private MessageType rootSchema;
   private Schema rootAvroSchema;
-  private ReflectData data = ReflectData.get();
+  private GenericData data = ReflectData.get();
 
   public AvroWriteSupport() {
   }
@@ -55,6 +55,12 @@ public class AvroWriteSupport<T> extends WriteSupport<T> {
   public AvroWriteSupport(MessageType schema, Schema avroSchema) {
     this.rootSchema = schema;
     this.rootAvroSchema = avroSchema;
+  }
+
+  public AvroWriteSupport(MessageType schema, Schema avroSchema, GenericData dataModel) {
+    this.rootSchema = schema;
+    this.rootAvroSchema = avroSchema;
+    this.data = dataModel;
   }
 
   /**

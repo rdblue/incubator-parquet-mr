@@ -343,8 +343,8 @@ public class ParquetInputSplit extends InputSplit implements Writable {
     int size = in.readInt();
     Map<String, String> map = new HashMap<String, String>(size);
     for (int i = 0; i < size; i++) {
-      String key = in.readUTF().intern();
-      String value = in.readUTF().intern();
+      String key = decompressString(in.readUTF()).intern();
+      String value = decompressString(in.readUTF()).intern();
       map.put(key, value);
     }
     return map;
@@ -356,8 +356,8 @@ public class ParquetInputSplit extends InputSplit implements Writable {
     } else {
       out.writeInt(map.size());
       for (Entry<String, String> entry : map.entrySet()) {
-        out.writeUTF(entry.getKey());
-        out.writeUTF(entry.getValue());
+        out.writeUTF(compressString(entry.getKey()));
+        out.writeUTF(compressString(entry.getValue()));
       }
     }
   }

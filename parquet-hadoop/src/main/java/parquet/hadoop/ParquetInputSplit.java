@@ -35,9 +35,7 @@ import java.util.Set;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
-import org.apache.commons.codec.binary.Base64;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.io.Text;
 import org.apache.hadoop.io.Writable;
 import org.apache.hadoop.mapreduce.InputSplit;
 
@@ -197,8 +195,8 @@ public class ParquetInputSplit extends InputSplit implements Writable {
     for (int i = 0; i < blocksSize; i++) {
       blocks.add(readBlock(in));
     }
-    this.requestedSchema = decompressString(Text.readString(in));
-    this.fileSchema = decompressString(Text.readString(in));
+    this.requestedSchema = decompressString(in);
+    this.fileSchema = decompressString(in);
     this.extraMetadata = readKeyValues(in);
     this.readSupportMetadata = readKeyValues(in);
   }
@@ -219,13 +217,17 @@ public class ParquetInputSplit extends InputSplit implements Writable {
     for (BlockMetaData block : blocks) {
       writeBlock(out, block);
     }
-    Text.writeString(out, compressString(requestedSchema));
-    Text.writeString(out, compressString(fileSchema));
+    byte[] compressedSchema = compressString(requestedSchema);
+    out.writeInt(compressedSchema.length);
+    out.write(compressedSchema);
+    compressedSchema = compressString(fileSchema);
+    out.writeInt(compressedSchema.length);
+    out.write(compressedSchema);
     writeKeyValues(out, extraMetadata);
     writeKeyValues(out, readSupportMetadata);
   }
 
-  String compressString(String str) {
+  byte[] compressString(String str) {
     ByteArrayOutputStream obj = new ByteArrayOutputStream();
     GZIPOutputStream gzip;
     try {
@@ -237,13 +239,18 @@ public class ParquetInputSplit extends InputSplit implements Writable {
       LOG.error("Unable to gzip InputSplit string " + str, e);
       throw new RuntimeException("Unable to gzip InputSplit string", e);
     }
-    String compressedStr = Base64.encodeBase64String(obj.toByteArray());
-    return compressedStr;
+    return obj.toByteArray();
   }
 
-  String decompressString(String str) {
-    byte[] decoded  = Base64.decodeBase64(str);
-    ByteArrayInputStream obj = new ByteArrayInputStream(decoded);
+  String decompressString(DataInput in) throws IOException {
+    int len = in.readInt();
+    byte[] bytes = new byte[len];
+    in.readFully(bytes);
+    return decompressString(bytes);
+  }
+
+  String decompressString(byte[] bytes) {
+    ByteArrayInputStream obj = new ByteArrayInputStream(bytes);
     GZIPInputStream gzip = null;
     String outStr = "";
     try {
@@ -258,14 +265,14 @@ public class ParquetInputSplit extends InputSplit implements Writable {
       outStr = sb.toString();
     } catch (IOException e) {
       // Not really sure how we can get here. I guess the best thing to do is to croak.
-      LOG.error("Unable to uncompress InputSplit string " + str, e);
+      LOG.error("Unable to uncompress InputSplit string", e);
       throw new RuntimeException("Unable to uncompress InputSplit String", e);
     } finally {
       if (null != gzip) {
         try {
           gzip.close();
         } catch (IOException e) {
-          LOG.error("Unable to uncompress InputSplit string " + str, e);
+          LOG.error("Unable to uncompress InputSplit", e);
           throw new RuntimeException("Unable to uncompress InputSplit String", e);
         }
       }
@@ -343,8 +350,8 @@ public class ParquetInputSplit extends InputSplit implements Writable {
     int size = in.readInt();
     Map<String, String> map = new HashMap<String, String>(size);
     for (int i = 0; i < size; i++) {
-      String key = decompressString(in.readUTF()).intern();
-      String value = decompressString(in.readUTF()).intern();
+      String key = decompressString(in).intern();
+      String value = decompressString(in).intern();
       map.put(key, value);
     }
     return map;
@@ -356,8 +363,12 @@ public class ParquetInputSplit extends InputSplit implements Writable {
     } else {
       out.writeInt(map.size());
       for (Entry<String, String> entry : map.entrySet()) {
-        out.writeUTF(compressString(entry.getKey()));
-        out.writeUTF(compressString(entry.getValue()));
+        byte[] compr = compressString(entry.getKey());
+        out.writeInt(compr.length);
+        out.write(compr);
+        compr = compressString(entry.getValue());
+        out.writeInt(compr.length);
+        out.write(compr);
       }
     }
   }

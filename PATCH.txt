@@ -1,0 +1,4 @@
+PATCH-337
+parquet-333 Compress schemas in split, provides compression methods
+parquet-342 Compress kv pairs in ParquetInputSplits
+parquet-346 stop using strings and b64 ...

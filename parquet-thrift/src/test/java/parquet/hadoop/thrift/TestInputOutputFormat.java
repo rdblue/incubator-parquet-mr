@@ -19,6 +19,7 @@ import static java.lang.Thread.sleep;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 
+import au.com.cba.omnia.ebenezer.example.Customer;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -35,6 +36,7 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
@@ -85,6 +87,40 @@ public class TestInputOutputFormat {
       context.write(null, new Text(value.toString()));
     }
 
+  }
+
+  @Test
+  public void testCustomerRead() throws Exception {
+
+    final Configuration conf = new Configuration();
+    final Path inputPath = new Path("/home/blue/tmp/CDH-21096.parquet");
+    final Path outputPath = new Path("target/test/hadoop/TestInputOutputFormat/out");
+    final FileSystem fileSystem = inputPath.getFileSystem(conf);
+    fileSystem.delete(outputPath, true);
+    {
+      final Job job = new Job(conf, "read");
+      job.setInputFormatClass(ParquetThriftInputFormat.class);
+      ParquetThriftInputFormat.setInputPaths(job, inputPath);
+      //ParquetThriftInputFormat.setThriftClass(job.getConfiguration(), Customer.class);
+
+      job.setMapperClass(TestInputOutputFormat.MyMapper2.class);
+      job.setNumReduceTasks(0);
+
+      job.setOutputFormatClass(TextOutputFormat.class);
+      TextOutputFormat.setOutputPath(job, outputPath);
+
+      waitForJob(job);
+    }
+
+    final BufferedReader out = new BufferedReader(new FileReader(new File(outputPath.toString(), "part-m-00000")));
+    String lineOut = null;
+    int lineNumber = 0;
+    while ((lineOut = out.readLine()) != null) {
+      lineOut = lineOut.substring(lineOut.indexOf("\t") + 1);
+      System.err.println("line " + lineNumber + ": " + lineOut);
+      ++ lineNumber;
+    }
+    out.close();
   }
 
   @Test

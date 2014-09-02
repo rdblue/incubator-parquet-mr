@@ -150,6 +150,10 @@
                 <outputDirectory>${project.build.directory}/generated-test-sources/scrooge</outputDirectory>
                 <thriftNamespaceMappings>
                     <thriftNamespaceMapping>
+                        <from>au.com.cba.omnia.ebenezer.thrift</from>
+                        <to>au.com.cba.omnia.ebenezer.example</to>
+                    </thriftNamespaceMapping>
+                    <thriftNamespaceMapping>
                         <from>parquet.thrift.test</from>
                         <to>parquet.scrooge.test</to>
                     </thriftNamespaceMapping>

@@ -48,7 +48,6 @@ import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.PathFilter;
-import org.apache.hadoop.mapred.Utils;
 
 import parquet.Log;
 import parquet.bytes.BytesInput;
@@ -57,8 +56,8 @@ import parquet.column.page.DictionaryPage;
 import parquet.column.page.Page;
 import parquet.column.page.PageReadStore;
 import parquet.common.schema.ColumnPath;
-import parquet.format.PageHeader;
-import parquet.format.Util;
+import org.apache.parquet.format.PageHeader;
+import org.apache.parquet.format.Util;
 import parquet.format.converter.ParquetMetadataConverter;
 import parquet.format.converter.ParquetMetadataConverter.MetadataFilter;
 import parquet.hadoop.CodecFactory.BytesDecompressor;

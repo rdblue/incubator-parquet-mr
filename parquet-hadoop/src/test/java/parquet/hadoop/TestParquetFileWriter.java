@@ -58,8 +58,7 @@ import parquet.schema.MessageType;
 import parquet.schema.MessageTypeParser;
 import parquet.schema.PrimitiveType;
 import parquet.schema.PrimitiveType.PrimitiveTypeName;
-import parquet.format.Statistics;
-import parquet.format.converter.ParquetMetadataConverter;
+import org.apache.parquet.format.Statistics;
 
 public class TestParquetFileWriter {
   private static final Log LOG = Log.getLog(TestParquetFileWriter.class);

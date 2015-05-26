@@ -48,6 +48,17 @@ public class AvroConverters {
     }
   }
 
+  static final class FieldBooleanConverter extends AvroPrimitiveConverter {
+    public FieldBooleanConverter(ParentValueContainer parent) {
+      super(parent);
+    }
+
+    @Override
+    final public void addBoolean(boolean value) {
+      parent.addBoolean(value);
+    }
+  }
+
   abstract static class BinaryConverter<T> extends AvroPrimitiveConverter {
     private T[] dict = null;
 
@@ -83,6 +94,8 @@ public class AvroConverters {
   }
 
   static final class FieldByteConverter extends AvroPrimitiveConverter {
+    private byte[] dict = null;
+
     public FieldByteConverter(ParentValueContainer parent) {
       super(parent);
     }
@@ -91,9 +104,30 @@ public class AvroConverters {
     public void addInt(int value) {
       parent.addByte((byte) value);
     }
+
+    @Override
+    public boolean hasDictionarySupport() {
+      return true;
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public void setDictionary(Dictionary dictionary) {
+      dict = new byte[dictionary.getMaxId() + 1];
+      for (int i = 0; i <= dictionary.getMaxId(); i++) {
+        dict[i] = (byte) dictionary.decodeToInt(i);
+      }
+    }
+
+    @Override
+    public void addValueFromDictionary(int dictionaryId) {
+      parent.addByte(dict[dictionaryId]);
+    }
   }
 
   static final class FieldShortConverter extends AvroPrimitiveConverter {
+    private short[] dict = null;
+
     public FieldShortConverter(ParentValueContainer parent) {
       super(parent);
     }
@@ -102,9 +136,30 @@ public class AvroConverters {
     public void addInt(int value) {
       parent.addShort((short) value);
     }
+
+    @Override
+    public boolean hasDictionarySupport() {
+      return true;
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public void setDictionary(Dictionary dictionary) {
+      dict = new short[dictionary.getMaxId() + 1];
+      for (int i = 0; i <= dictionary.getMaxId(); i++) {
+        dict[i] = (short) dictionary.decodeToInt(i);
+      }
+    }
+
+    @Override
+    public void addValueFromDictionary(int dictionaryId) {
+      parent.addShort(dict[dictionaryId]);
+    }
   }
 
   static final class FieldCharConverter extends AvroPrimitiveConverter {
+    private char[] dict = null;
+
     public FieldCharConverter(ParentValueContainer parent) {
       super(parent);
     }
@@ -113,20 +168,30 @@ public class AvroConverters {
     public void addInt(int value) {
       parent.addChar((char) value);
     }
-  }
 
-  static final class FieldBooleanConverter extends AvroPrimitiveConverter {
-    public FieldBooleanConverter(ParentValueContainer parent) {
-      super(parent);
+    @Override
+    public boolean hasDictionarySupport() {
+      return true;
     }
 
     @Override
-    final public void addBoolean(boolean value) {
-      parent.addBoolean(value);
+    @SuppressWarnings("unchecked")
+    public void setDictionary(Dictionary dictionary) {
+      dict = new char[dictionary.getMaxId() + 1];
+      for (int i = 0; i <= dictionary.getMaxId(); i++) {
+        dict[i] = (char) dictionary.decodeToInt(i);
+      }
+    }
+
+    @Override
+    public void addValueFromDictionary(int dictionaryId) {
+      parent.addChar(dict[dictionaryId]);
     }
   }
 
   static final class FieldIntegerConverter extends AvroPrimitiveConverter {
+    private int[] dict = null;
+
     public FieldIntegerConverter(ParentValueContainer parent) {
       super(parent);
     }
@@ -134,6 +199,25 @@ public class AvroConverters {
     @Override
     final public void addInt(int value) {
       parent.addInt(value);
+    }
+
+    @Override
+    public boolean hasDictionarySupport() {
+      return true;
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public void setDictionary(Dictionary dictionary) {
+      dict = new int[dictionary.getMaxId() + 1];
+      for (int i = 0; i <= dictionary.getMaxId(); i++) {
+        dict[i] = dictionary.decodeToInt(i);
+      }
+    }
+
+    @Override
+    public void addValueFromDictionary(int dictionaryId) {
+      parent.addInt(dict[dictionaryId]);
     }
   }
 

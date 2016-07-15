@@ -78,13 +78,14 @@ public class ColumnReadStoreImpl implements ColumnReadStore {
   }
 
   private ColumnReaderImpl newMemColumnReader(ColumnDescriptor path, PageReader pageReader) {
-    PrimitiveConverter converter = getPrimitiveConverter(path);
+    PrimitiveConverter converter = getPrimitiveConverter(schema, recordConverter, path);
     return new ColumnReaderImpl(path, pageReader, converter, writerVersion);
   }
 
-  private PrimitiveConverter getPrimitiveConverter(ColumnDescriptor path) {
+  public static PrimitiveConverter getPrimitiveConverter(
+      MessageType schema, GroupConverter rootConverter, ColumnDescriptor path) {
     Type currentType = schema;
-    Converter currentConverter = recordConverter;
+    Converter currentConverter = rootConverter;
     for (String fieldName : path.getPath()) {
       final GroupType groupType = currentType.asGroupType();
       int fieldIndex = groupType.getFieldIndex(fieldName);

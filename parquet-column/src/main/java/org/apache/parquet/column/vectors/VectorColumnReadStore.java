@@ -22,22 +22,14 @@ package org.apache.parquet.column.vectors;
 import org.apache.parquet.column.ColumnDescriptor;
 import org.apache.parquet.column.ColumnReadStore;
 import org.apache.parquet.column.ColumnReader;
-import org.apache.parquet.column.ValuesType;
 import org.apache.parquet.column.impl.ColumnReadStoreImpl;
-import org.apache.parquet.column.page.DataPage;
-import org.apache.parquet.column.page.DataPageV1;
-import org.apache.parquet.column.page.DataPageV2;
 import org.apache.parquet.column.page.DictionaryPage;
 import org.apache.parquet.column.page.PageReadStore;
 import org.apache.parquet.column.page.PageReader;
-import org.apache.parquet.column.values.ValuesReader;
-import org.apache.parquet.io.ParquetDecodingException;
 import org.apache.parquet.io.api.Binary;
 import org.apache.parquet.io.api.GroupConverter;
 import org.apache.parquet.io.api.PrimitiveConverter;
 import org.apache.parquet.schema.MessageType;
-import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.util.BitSet;
 
 public class VectorColumnReadStore implements ColumnReadStore {
@@ -47,7 +39,8 @@ public class VectorColumnReadStore implements ColumnReadStore {
   private final PageReadStore pageStore;
   private long rowGroupSize;
 
-  public VectorColumnReadStore(PageReadStore pageStore, long rowGroupSize, MessageType schema, GroupConverter converter) {
+  public VectorColumnReadStore(PageReadStore pageStore, long rowGroupSize,
+                               MessageType schema, GroupConverter converter) {
     this.pageStore = pageStore;
     this.rowGroupSize = rowGroupSize;
     this.schema = schema;
@@ -70,13 +63,15 @@ public class VectorColumnReadStore implements ColumnReadStore {
     private final PageReader pages;
     private final ColumnDescriptor column;
     private final long columnLength;
-    private DictionaryPage dict = null;
+    private final PageReadState state;
+    private final DictionaryPage dict;
 
     public VectorColumnReader(PageReader pages, ColumnDescriptor column,
                               long columnLength) {
       this.pages = pages;
       this.column = column;
       this.columnLength = columnLength;
+      this.state = new PageReadState(column, pages);
       this.dict = pages.readDictionaryPage();
     }
 
@@ -92,184 +87,191 @@ public class VectorColumnReadStore implements ColumnReadStore {
       return dict;
     }
 
-    // TODO: encapsulate this in a PageReadState
-    private int pageValueCount = 0;
-    private ValuesReader rlReader = null;
-    private byte[] slop = new byte[0];
-    private int slopLen = 0;
-    private ValuesReader dlReader = null;
-    private ValuesReader vReader = null;
-    private boolean noMorePages = false;
-
-    private void advancePage() {
-      DataPage dataPage = pages.readPage();
-      if (dataPage != null) {
-        dataPage.accept(new DataPage.Visitor<Void>() {
-          @Override
-          public Void visit(DataPageV1 page) {
-            try {
-              pageValueCount = page.getValueCount();
-              ByteBuffer bytes = page.getBytes().toByteBuffer();
-
-              rlReader = page.getRlEncoding().getValuesReader(column, ValuesType.REPETITION_LEVEL);
-              rlReader.initFromPage(pageValueCount, bytes, 0);
-
-              dlReader = page.getDlEncoding().getValuesReader(column, ValuesType.DEFINITION_LEVEL);
-              dlReader.initFromPage(pageValueCount, bytes, rlReader.getNextOffset());
-
-              vReader = page.getValueEncoding().getValuesReader(column, ValuesType.VALUES);
-              vReader.initFromPage(pageValueCount, bytes, dlReader.getNextOffset());
-            } catch (IOException e) {
-              throw new ParquetDecodingException(String.format(
-                  "Failed to initialize readers for page %s in %s", page, column),
-                  e);
-            }
-            return null;
-          }
-
-          @Override
-          public Void visit(DataPageV2 page) {
-            try {
-              if (page.isCompressed()) {
-                throw new IOException("Not implemented");
-              }
-            } catch (IOException e) {
-              throw new ParquetDecodingException(String.format(
-                  "Failed to initialize readers for page %s in %s", page, column),
-                  e);
-            }
-            return null;
-          }
-        });
-      } else {
-        noMorePages = true;
-      }
-    }
-
     public int readVector(IntVector vector) {
       int pos = 0;
       int valuesRead;
 
-      vector.recordLength = 0;
-      int numRecords = vector.recordCapacity;
+      vector.reset();
+      int numRecords = vector.size.recordCapacity;
 
       if (column.getMaxRepetitionLevel() == 0) {
         // each value is a record
-        while ((valuesRead = readValues(vector, pos, numRecords - pos)) > 0) {
-          pos += valuesRead;
+        if (column.getMaxDefinitionLevel() == 0) {
+          while ((valuesRead = readRl0(state, vector.size, vector.repetition, pos)) > 0) {
+            readDl0(vector.definition, vector.nullability, pos, valuesRead);
+            readNonNullValues(state, vector, pos, valuesRead);
+            pos += valuesRead;
+          }
+        } else {
+          while ((valuesRead = readRl0(state, vector.size, vector.repetition, pos)) > 0) {
+            readDl(state, vector.definition, vector.nullability, pos, valuesRead);
+            readNullableValues(state, vector, pos, valuesRead);
+            pos += valuesRead;
+          }
         }
-        return pos;
 
       } else {
-        int nextReadSize = Math.min(
-            numRecords, IntVector.maxValueCapacity() - vector.length);
-        while ((valuesRead = readValues(vector, pos, nextReadSize)) > 0) {
-          pos += valuesRead;
-          nextReadSize = Math.min(
-              numRecords, IntVector.maxValueCapacity() - vector.length);
+        if (column.getMaxDefinitionLevel() == 0) {
+          while ((valuesRead = readRl(state, vector.size, vector.repetition, pos, numRecords)) > 0) {
+            readDl0(vector.definition, vector.nullability, pos, valuesRead);
+            readNonNullValues(state, vector, pos, valuesRead);
+            pos += valuesRead;
+          }
+        } else {
+          while ((valuesRead = readRl(state, vector.size, vector.repetition, pos, numRecords)) > 0) {
+            readDl(state, vector.definition, vector.nullability, pos, valuesRead);
+            readNullableValues(state, vector, pos, valuesRead);
+            pos += valuesRead;
+          }
         }
       }
 
-      return vector.recordLength;
+      return vector.size.recordLength;
     }
 
-    public int readValues(IntVector vector, int offset, int numValues) {
-      if (pageValueCount == 0) {
-        advancePage();
-        if (noMorePages) {
-          return -1;
-        }
-      }
+    private static int readRl0(
+        PageReadState state, Vector.VectorSize size, byte[] repetition,
+        int offset) {
+      int numValues = size.availableRecordCapacity();
 
-      int recordLimit = vector.recordCapacity - vector.recordLength;
-      if (recordLimit <= 0) {
+      int pageValues = state.valuesAvailable();
+      if (pageValues < 0) {
         return -1;
       }
 
-      vector.ensureCapacity(numValues);
+      // read to the end of the page, until the vector is full, or the number
+      // of values requested
+      int valuesToRead = Math.min(numValues, pageValues);
 
-      // read to the end of the page or the number of values requested
-      int valuesToRead = Math.min(numValues, pageValueCount);
       int limit = offset + valuesToRead;
+      for (int i = offset; i < limit; i += 1) {
+        repetition[i] = 0;
+      }
+
+      size.length += valuesToRead;
+      size.recordLength += valuesToRead;
+      state.pageValueCount -= valuesToRead;
+
+      return valuesToRead;
+    }
+
+    private static int readRl(
+        PageReadState state, Vector.VectorSize size, byte[] repetition,
+        int offset, int numValues) {
+      int recordsToRead = size.availableRecordCapacity();
+      if (recordsToRead <= 0) {
+        return -1;
+      }
+
+      int pageValues = state.valuesAvailable();
+      if (pageValues < 0) {
+        return -1;
+      }
+
+      size.ensureCapacity(numValues);
+      int availableCapacity = size.availableCapacity();
+      if (availableCapacity <= 0) {
+        return -1;
+      }
+
+      // read to the end of the page, until the vector is full, or the number
+      // of values requested
+      int valuesToRead = Math.min(
+          Math.min(numValues, state.pageValueCount),
+          availableCapacity);
+
+      int limit = offset + valuesToRead;
+
+      if (state.slopLen >= valuesToRead) {
+        return -1;
+      }
+
+      int readFromSlop = state.loadSlop(repetition, offset);
 
       // keep track of record boundaries
       int recordCount = 0;
+      int[] rlast = new int[state.column.getMaxRepetitionLevel()];
 
-      if (column.getMaxRepetitionLevel() == 0) {
-        recordCount = valuesToRead;
-        for (int i = offset; i < limit; i += 1) {
-          vector.repetition[i] = 0;
-        }
-
-      } else {
-        if (slopLen >= valuesToRead) {
-          return -1;
-        }
-
-        if (slopLen > 0) {
-          System.arraycopy(slop, 0, vector.repetition, offset, slopLen);
-        }
-
-        // track the last position of each repetition level
-        int[] last = new int[column.getMaxRepetitionLevel()];
-
-        int i = offset + slopLen;
-        last[0] = i;
-        for (; i < limit && recordCount < recordLimit; i += 1) {
-          byte r = (byte) rlReader.readInteger();
-          vector.repetition[i] = r;
-          recordCount += 1 - Integer.signum(r);
-          last[r] = i; // TODO: is this better than a branch?
-        }
-
-        slopLen = i - last[0];
-        if (slop.length < slopLen) {
-          slop = new byte[((slopLen >> 10) + 1) << 10]; // next multiple of 1024
-        }
-        System.arraycopy(vector.repetition, last[0], slop, 0, slopLen);
-
-        // update for slop and if the read stopped early
-        valuesToRead = i - offset - slopLen;
-        limit -= slopLen;
+      int i = offset + readFromSlop;
+      rlast[0] = i;
+      for (; i < limit && recordCount < recordsToRead; i += 1) {
+        byte r = (byte) state.rlReader.readInteger();
+        repetition[i] = r;
+        recordCount += 1 - Integer.signum(r);
+        rlast[r] = i; // TODO: is this better than a branch?
       }
 
-      byte maxDefinitionLevel = (byte) column.getMaxDefinitionLevel();
-      if (maxDefinitionLevel == 0) {
-        for (int i = offset; i < limit; i += 1) {
-          vector.definition[i] = 0;
-        }
-      } else {
-        for (int i = offset; i < limit; i += 1) {
-          byte d = (byte) dlReader.readInteger();
-          vector.definition[i] = d;
-          vector.nullability.set(i, d == maxDefinitionLevel);
-        }
+      state.saveSlop(repetition, rlast[0], i - rlast[0]);
+
+      // update the vector length now that the number of triples is known
+      int valuesRead = rlast[0] - offset;
+      size.recordLength += recordCount;
+      size.length += valuesRead;
+
+      // this should be the number of values available to read, regardless of
+      // whether this read too many repetition levels. (slop counts for total)
+      state.pageValueCount -= valuesRead;
+
+      return valuesRead;
+    }
+
+    private static void readDl0(
+        byte[] definition, BitSet nullability, int offset, int valuesToRead) {
+      int limit = offset + valuesToRead;
+
+      // definition level is always 0
+      for (int i = offset; i < limit; i += 1) {
+        definition[i] = 0;
       }
 
-      if ((maxDefinitionLevel > 0) &&
-          (vector.nullability.cardinality() > (vector.capacity >> 5))) {
+      // values are never null
+      nullability.set(offset, limit, true);
+    }
+
+    private static void readDl(
+        PageReadState state, byte[] definition, BitSet nullability, int offset,
+        int valuesToRead) {
+      int limit = offset + valuesToRead;
+
+      byte maxDl = (byte) state.column.getMaxDefinitionLevel();
+      for (int i = offset; i < limit; i += 1) {
+        byte d = (byte) state.dlReader.readInteger();
+        definition[i] = d;
+        nullability.set(i, d == maxDl);
+      }
+    }
+
+    private static void readNonNullValues(
+        PageReadState state, IntVector vector, int offset, int valuesToRead) {
+      int limit = offset + valuesToRead;
+
+      for (int i = offset; i < limit; i += 1) {
+        vector.value[i] = state.vReader.readInteger();
+      }
+    }
+
+    private static void readNullableValues(
+        PageReadState state, IntVector vector, int offset, int valuesToRead) {
+      int limit = offset + valuesToRead;
+
+      if (vector.nullability.cardinality() < (vector.size.length >> 5)) {
         int i = vector.nullability.nextSetBit(0);
         while (i > offset && i < limit) {
-          vector.value[i] = vReader.readInteger();
+          vector.value[i] = state.vReader.readInteger();
           i = vector.nullability.nextSetBit(i);
         }
       } else {
         for (int i = offset; i < limit; i += 1) {
           if (vector.nullability.get(i)) {
-            vector.value[i] = vReader.readInteger();
+            vector.value[i] = state.vReader.readInteger();
           }
         }
       }
-
-      vector.recordLength += recordCount;
-      this.pageValueCount -= valuesToRead;
-
-      return valuesToRead;
     }
 
-    public IntVector readVector(IntVector vector, BitSet keepSet) {
+    public int readVector(IntVector vector, BitSet keepSet) {
       // TODO
-      return null;
+      return 0;
     }
   }
 
@@ -300,7 +302,7 @@ public class VectorColumnReadStore implements ColumnReadStore {
     @Override
     public void consume() {
       this.pos += 1;
-      if (pos >= vector.length) {
+      if (pos >= vector.size.length) {
         read();
       }
       pos = 0;

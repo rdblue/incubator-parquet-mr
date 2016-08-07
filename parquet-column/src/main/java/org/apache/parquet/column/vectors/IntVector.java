@@ -23,60 +23,40 @@ import org.apache.parquet.Preconditions;
 import java.util.Arrays;
 import java.util.BitSet;
 
-public class IntVector {
+public class IntVector extends Vector {
 
-  public int recordCapacity; // always <= length
-  public int capacity; // index into arrays, so must be an int
-  public int recordLength;
-  public int length; // always <= capacity
-
-  // limit is used to set the point up to which the vector has been used
-  // copy(IntVector) then copies from this point to length into the new vector
-  public int limit;
+  public final Vector.VectorSize size;
 
   public byte[] definition;
   public byte[] repetition;
   public int[] value;
   public BitSet nullability;
 
-  private int growBy;
-
   public IntVector(int recordCapacity) {
     Preconditions.checkArgument(recordCapacity < maxValueCapacity(),
         "Record capacity cannot be larger than " + maxValueCapacity());
-    this.recordCapacity = recordCapacity;
-    this.capacity = recordCapacity;
-    this.recordLength = 0;
-    this.length = 0;
-    this.growBy = recordCapacity;
-    this.definition = new byte[capacity];
-    this.repetition = new byte[capacity];
-    this.value = new int[capacity];
-    this.nullability = new BitSet(capacity);
+    this.size = new Vector.VectorSize(this, recordCapacity);
+    this.definition = new byte[size.capacity];
+    this.repetition = new byte[size.capacity];
+    this.value = new int[size.capacity];
+    this.nullability = new BitSet(size.capacity);
   }
 
-  public void ensureCapacity(int numValues) {
-    int newCapacity;
-    if (((long) length + numValues) < maxValueCapacity()) {
-      newCapacity = length + numValues;
-    } else {
-      newCapacity = maxValueCapacity();
-    }
+  @Override
+  public void reset() {
+    size.length = 0;
+    size.recordLength = 0;
+    nullability.clear();
+  }
 
-    if (capacity > newCapacity) {
-      return;
-    }
-
-    while (capacity < newCapacity) {
-      this.capacity = capacity + growBy;
-    }
-
+  @Override
+  public void resize() {
     // TODO: it may be better to leave data in place and add new arrays
-    this.definition = Arrays.copyOf(definition, capacity);
-    this.repetition = Arrays.copyOf(repetition, capacity);
-    this.value = Arrays.copyOf(value, capacity);
+    this.definition = Arrays.copyOf(definition, size.capacity);
+    this.repetition = Arrays.copyOf(repetition, size.capacity);
+    this.value = Arrays.copyOf(value, size.capacity);
     BitSet nulls = nullability;
-    this.nullability = new BitSet(capacity);
+    this.nullability = new BitSet(size.capacity);
     nullability.or(nulls);
   }
 
@@ -84,8 +64,5 @@ public class IntVector {
 
   }
 
-  public static int maxValueCapacity() {
-    return Integer.MAX_VALUE;
-  }
 
 }

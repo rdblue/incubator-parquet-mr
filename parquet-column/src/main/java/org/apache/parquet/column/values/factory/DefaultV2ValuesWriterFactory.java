@@ -28,6 +28,14 @@ import org.apache.parquet.column.values.deltastrings.DeltaByteArrayWriter;
 import org.apache.parquet.column.values.plain.FixedLenByteArrayPlainValuesWriter;
 import org.apache.parquet.column.values.plain.PlainValuesWriter;
 import org.apache.parquet.column.values.rle.RunLengthBitPackingHybridValuesWriter;
+import org.apache.parquet.column.values.zigzag.DeltaZigZagIntValuesWriter;
+import org.apache.parquet.column.values.zigzag.DeltaZigZagLongValuesWriter;
+import org.apache.parquet.column.values.zigzag.XorDoubleValuesWriter;
+import org.apache.parquet.column.values.zigzag.XorFloatValuesWriter;
+import org.apache.parquet.column.values.zigzag.ZigZagDoubleValuesWriter;
+import org.apache.parquet.column.values.zigzag.ZigZagFloatValuesWriter;
+import org.apache.parquet.column.values.zigzag.ZigZagIntValuesWriter;
+import org.apache.parquet.column.values.zigzag.ZigZagLongValuesWriter;
 
 import static org.apache.parquet.column.Encoding.PLAIN;
 import static org.apache.parquet.column.Encoding.RLE_DICTIONARY;
@@ -89,12 +97,12 @@ public class DefaultV2ValuesWriterFactory implements ValuesWriterFactory {
   }
 
   private ValuesWriter getInt32ValuesWriter(ColumnDescriptor path) {
-    ValuesWriter fallbackWriter = new DeltaBinaryPackingValuesWriterForInteger(parquetProperties.getInitialSlabSize(), parquetProperties.getPageSizeThreshold(), parquetProperties.getAllocator());
+    ValuesWriter fallbackWriter = new DeltaZigZagIntValuesWriter(parquetProperties.getInitialSlabSize(), parquetProperties.getPageSizeThreshold(), parquetProperties.getAllocator());
     return DefaultValuesWriterFactory.dictWriterWithFallBack(path, parquetProperties, getEncodingForDictionaryPage(), getEncodingForDataPage(), fallbackWriter);
   }
 
   private ValuesWriter getInt64ValuesWriter(ColumnDescriptor path) {
-    ValuesWriter fallbackWriter = new DeltaBinaryPackingValuesWriterForLong(parquetProperties.getInitialSlabSize(), parquetProperties.getPageSizeThreshold(), parquetProperties.getAllocator());
+    ValuesWriter fallbackWriter = new DeltaZigZagLongValuesWriter(parquetProperties.getInitialSlabSize(), parquetProperties.getPageSizeThreshold(), parquetProperties.getAllocator());
     return DefaultValuesWriterFactory.dictWriterWithFallBack(path, parquetProperties, getEncodingForDictionaryPage(), getEncodingForDataPage(), fallbackWriter);
   }
 
@@ -104,12 +112,12 @@ public class DefaultV2ValuesWriterFactory implements ValuesWriterFactory {
   }
 
   private ValuesWriter getDoubleValuesWriter(ColumnDescriptor path) {
-    ValuesWriter fallbackWriter = new PlainValuesWriter(parquetProperties.getInitialSlabSize(), parquetProperties.getPageSizeThreshold(), parquetProperties.getAllocator());
+    ValuesWriter fallbackWriter = new XorDoubleValuesWriter(parquetProperties.getInitialSlabSize(), parquetProperties.getPageSizeThreshold(), parquetProperties.getAllocator());
     return DefaultValuesWriterFactory.dictWriterWithFallBack(path, parquetProperties, getEncodingForDictionaryPage(), getEncodingForDataPage(), fallbackWriter);
   }
 
   private ValuesWriter getFloatValuesWriter(ColumnDescriptor path) {
-    ValuesWriter fallbackWriter = new PlainValuesWriter(parquetProperties.getInitialSlabSize(), parquetProperties.getPageSizeThreshold(), parquetProperties.getAllocator());
+    ValuesWriter fallbackWriter = new XorFloatValuesWriter(parquetProperties.getInitialSlabSize(), parquetProperties.getPageSizeThreshold(), parquetProperties.getAllocator());
     return DefaultValuesWriterFactory.dictWriterWithFallBack(path, parquetProperties, getEncodingForDictionaryPage(), getEncodingForDataPage(), fallbackWriter);
   }
 }

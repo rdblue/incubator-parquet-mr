@@ -49,6 +49,14 @@ import org.apache.parquet.column.values.plain.PlainValuesReader.FloatPlainValues
 import org.apache.parquet.column.values.plain.PlainValuesReader.IntegerPlainValuesReader;
 import org.apache.parquet.column.values.plain.PlainValuesReader.LongPlainValuesReader;
 import org.apache.parquet.column.values.rle.RunLengthBitPackingHybridValuesReader;
+import org.apache.parquet.column.values.zigzag.DeltaZigZagIntValuesReader;
+import org.apache.parquet.column.values.zigzag.DeltaZigZagLongValuesReader;
+import org.apache.parquet.column.values.zigzag.XorDoubleValuesReader;
+import org.apache.parquet.column.values.zigzag.XorFloatValuesReader;
+import org.apache.parquet.column.values.zigzag.ZigZagDoubleValuesReader;
+import org.apache.parquet.column.values.zigzag.ZigZagFloatValuesReader;
+import org.apache.parquet.column.values.zigzag.ZigZagIntValuesReader;
+import org.apache.parquet.column.values.zigzag.ZigZagLongValuesReader;
 import org.apache.parquet.io.ParquetDecodingException;
 
 /**
@@ -205,7 +213,6 @@ public enum Encoding {
    * Dictionary encoding: the ids are encoded using the RLE encoding
    */
   RLE_DICTIONARY {
-
     @Override
     public ValuesReader getDictionaryBasedValuesReader(ColumnDescriptor descriptor, ValuesType valuesType, Dictionary dictionary) {
       switch (descriptor.getType()) {
@@ -226,7 +233,52 @@ public enum Encoding {
     public boolean usesDictionary() {
       return true;
     }
+  },
 
+  ZIGZAG_RLE {
+    @Override
+    public ValuesReader getValuesReader(ColumnDescriptor descriptor, ValuesType valuesType) {
+      switch (descriptor.getType()) {
+        case INT32:
+          return new ZigZagIntValuesReader();
+        case INT64:
+          return new ZigZagLongValuesReader();
+        case FLOAT:
+          return new ZigZagFloatValuesReader();
+        case DOUBLE:
+          return new ZigZagDoubleValuesReader();
+        default:
+          throw new ParquetDecodingException("Zig-zag RLE encoding not supported for type: " + descriptor.getType());
+      }
+    }
+  },
+
+  DELTA_ZIGZAG_RLE {
+    @Override
+    public ValuesReader getValuesReader(ColumnDescriptor descriptor, ValuesType valuesType) {
+      switch (descriptor.getType()) {
+        case INT32:
+          return new DeltaZigZagIntValuesReader();
+        case INT64:
+          return new DeltaZigZagLongValuesReader();
+        default:
+          throw new ParquetDecodingException("Delta zig-zag RLE encoding not supported for type: " + descriptor.getType());
+      }
+    }
+  },
+
+  XOR_FLOATING_POINT {
+    @Override
+    public ValuesReader getValuesReader(ColumnDescriptor descriptor, ValuesType valuesType) {
+      switch (descriptor.getType()) {
+        case FLOAT:
+          return new XorFloatValuesReader();
+        case DOUBLE:
+          return new XorDoubleValuesReader();
+        default:
+          throw new ParquetDecodingException("Xor RLE encoding not supported for type: " + descriptor.getType());
+      }
+    }
   };
 
   int getMaxLevel(ColumnDescriptor descriptor, ValuesType valuesType) {
